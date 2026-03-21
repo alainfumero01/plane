@@ -122,13 +122,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data }) => {
+    const initSession = async () => {
+      const { data } = await supabase.auth.getSession();
       if (!mounted) return;
 
       setSession(data.session ?? null);
       if (data.session?.user) await loadMemberships(data.session.user.id);
       setLoading(false);
-    });
+    };
+
+    void initSession();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       if (!mounted) return;
@@ -155,7 +158,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const userRoles = deriveRolesFromUser(session?.user ?? null);
     if (userRoles.length > 0) return userRoles;
 
-    return ["site_operator"];
+    return ["site_operator" as RoleCode];
   }, [memberships, rolePreview, session?.user]);
 
   const activeCompanyId = useMemo(() => {
@@ -211,7 +214,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       signUp,
       signOut,
     }),
-    [activeCompanyId, loading, memberships, rolePreview, roles, session, setRolePreview, signIn, signOut, signUp],
+    [activeCompanyId, loading, memberships, rolePreview, roles, session, setRolePreview, signIn, signOut, signUp]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -17,7 +17,9 @@
     "fix:format": "oxfmt ."
   },
   "dependencies": {
+    "@react-router/node": "catalog:",
     "@supabase/supabase-js": "^2.57.4",
+    "isbot": "^5",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-router": "catalog:",
