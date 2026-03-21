@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter aida-web build",
-  "ignoreCommand": "node -e \"process.exit(1)\"",
   "outputDirectory": "apps/aida-web/build/client",
   "framework": null,
   "git": {
