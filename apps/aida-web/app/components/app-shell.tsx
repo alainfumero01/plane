@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { canAccessPath, roleLabels, type RoleCode } from "@/app/lib/roles";
 import { useAuth } from "@/app/lib/auth-context";
+import { supabase } from "@/app/lib/supabase";
 
 type NavItem = {
   label: string;
@@ -22,8 +24,33 @@ const navItems: NavItem[] = [
 export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
   const { user, roles, rolePreview, setRolePreview, signOut, activeCompanyId } = useAuth();
+  const [companyName, setCompanyName] = useState<string | null>(null);
 
   const visibleNavItems = navItems.filter((item) => canAccessPath(item.path, roles));
+
+  useEffect(() => {
+    const run = async () => {
+      if (!supabase || !activeCompanyId) {
+        setCompanyName(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", activeCompanyId)
+        .maybeSingle<{ name: string }>();
+
+      if (error || !data) {
+        setCompanyName(null);
+        return;
+      }
+
+      setCompanyName(data.name);
+    };
+
+    void run();
+  }, [activeCompanyId]);
 
   return (
     <div className="aida-shell">
@@ -48,7 +75,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
 
         <div className="aida-company">
           <p>Company</p>
-          <strong>{activeCompanyId ?? "No active company"}</strong>
+          <strong>{companyName ?? activeCompanyId ?? "No active company"}</strong>
         </div>
       </aside>
 

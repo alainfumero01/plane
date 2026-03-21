@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter aida-web build",
+  "outputDirectory": "apps/aida-web/build/client",
+  "framework": null,
+  "routes": [{ "handle": "filesystem" }, { "src": "/.*", "dest": "/index.html" }]
+}
