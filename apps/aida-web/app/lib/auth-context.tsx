@@ -1,0 +1,227 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { Session, User } from "@supabase/supabase-js";
+import { dedupeRoles, type RoleCode } from "./roles";
+import { hasSupabaseConfig, supabase } from "./supabase";
+
+type Membership = {
+  companyId: string;
+  roleCode: RoleCode;
+  isDefaultCompany: boolean;
+};
+
+type AuthContextValue = {
+  loading: boolean;
+  session: Session | null;
+  user: User | null;
+  memberships: Membership[];
+  activeCompanyId: string | null;
+  roles: RoleCode[];
+  rolePreview: RoleCode | null;
+  setRolePreview: (role: RoleCode | null) => void;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string) => Promise<void>;
+  signOut: () => Promise<void>;
+};
+
+const RolePreviewStorageKey = "aida.rolePreview";
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+const deriveRolesFromUser = (user: User | null): RoleCode[] => {
+  if (!user) return [];
+
+  const metadataRoles = user.app_metadata?.roles;
+  if (Array.isArray(metadataRoles)) {
+    return dedupeRoles(metadataRoles.filter((entry): entry is string => typeof entry === "string"));
+  }
+
+  const singleRole = user.app_metadata?.role;
+  if (typeof singleRole === "string") {
+    return dedupeRoles([singleRole]);
+  }
+
+  return [];
+};
+
+const parseRoleCode = (value: unknown): RoleCode | null => {
+  if (
+    value === "business_owner_admin" ||
+    value === "warehouse" ||
+    value === "project_manager" ||
+    value === "site_operator" ||
+    value === "offshore_engineer"
+  ) {
+    return value;
+  }
+
+  return null;
+};
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [rolePreview, setRolePreviewState] = useState<RoleCode | null>(null);
+
+  const setRolePreview = useCallback((role: RoleCode | null) => {
+    setRolePreviewState(role);
+    if (typeof window !== "undefined") {
+      if (role) window.localStorage.setItem(RolePreviewStorageKey, role);
+      else window.localStorage.removeItem(RolePreviewStorageKey);
+    }
+  }, []);
+
+  const loadMemberships = useCallback(async (userId: string) => {
+    if (!supabase) {
+      setMemberships([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_company_memberships")
+      .select("company_id,is_default_company,roles(code)")
+      .eq("user_id", userId)
+      .eq("status", "active");
+
+    if (error) {
+      console.error("Failed to load memberships", error);
+      setMemberships([]);
+      return;
+    }
+
+    const parsed: Membership[] = (data ?? [])
+      .map((row) => {
+        const rawRoles = row.roles as { code?: string } | Array<{ code?: string }> | null;
+        const roleRecord = Array.isArray(rawRoles) ? rawRoles[0] : rawRoles;
+        const roleCode = parseRoleCode(roleRecord?.code);
+
+        if (!roleCode) return null;
+
+        return {
+          companyId: row.company_id,
+          roleCode,
+          isDefaultCompany: row.is_default_company ?? false,
+        } satisfies Membership;
+      })
+      .filter((entry): entry is Membership => entry !== null);
+
+    setMemberships(parsed);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem(RolePreviewStorageKey);
+      const parsed = parseRoleCode(stored);
+      if (parsed) setRolePreviewState(parsed);
+    }
+
+    if (!hasSupabaseConfig || !supabase) {
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!mounted) return;
+
+      setSession(data.session ?? null);
+      if (data.session?.user) await loadMemberships(data.session.user.id);
+      setLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      if (!mounted) return;
+
+      setSession(nextSession ?? null);
+      if (nextSession?.user) await loadMemberships(nextSession.user.id);
+      else setMemberships([]);
+      setLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [loadMemberships]);
+
+  const roles = useMemo(() => {
+    const membershipRoles = dedupeRoles(memberships.map((membership) => membership.roleCode));
+
+    if (rolePreview) return [rolePreview];
+
+    if (membershipRoles.length > 0) return membershipRoles;
+
+    const userRoles = deriveRolesFromUser(session?.user ?? null);
+    if (userRoles.length > 0) return userRoles;
+
+    return ["site_operator"];
+  }, [memberships, rolePreview, session?.user]);
+
+  const activeCompanyId = useMemo(() => {
+    const defaultMembership = memberships.find((membership) => membership.isDefaultCompany);
+    if (defaultMembership) return defaultMembership.companyId;
+    if (memberships[0]) return memberships[0].companyId;
+
+    const metadataCompanyId = session?.user?.app_metadata?.company_id;
+    return typeof metadataCompanyId === "string" ? metadataCompanyId : null;
+  }, [memberships, session?.user?.app_metadata]);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string, fullName: string) => {
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
+      },
+    });
+
+    if (error) throw error;
+  }, []);
+
+  const signOut = useCallback(async () => {
+    if (!supabase) return;
+
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  }, []);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      loading,
+      session,
+      user: session?.user ?? null,
+      memberships,
+      activeCompanyId,
+      roles,
+      rolePreview,
+      setRolePreview,
+      signIn,
+      signUp,
+      signOut,
+    }),
+    [activeCompanyId, loading, memberships, rolePreview, roles, session, setRolePreview, signIn, signOut, signUp],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used inside AuthProvider.");
+  }
+
+  return context;
+};

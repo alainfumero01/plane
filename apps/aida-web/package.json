@@ -1,0 +1,37 @@
+{
+  "name": "aida-web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0",
+  "type": "module",
+  "scripts": {
+    "dev": "react-router dev --port 3010",
+    "build": "react-router build",
+    "preview": "react-router build && serve -s build/client -l 3010",
+    "start": "serve -s build/client -l 3010",
+    "clean": "rm -rf .turbo && rm -rf .react-router && rm -rf node_modules && rm -rf dist && rm -rf build",
+    "check:lint": "oxlint --max-warnings=0 .",
+    "check:types": "react-router typegen && tsc --noEmit",
+    "check:format": "oxfmt --check .",
+    "fix:lint": "oxlint --fix .",
+    "fix:format": "oxfmt ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-router": "catalog:",
+    "serve": "14.2.5"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "catalog:",
+    "@plane/typescript-config": "workspace:*",
+    "@react-router/dev": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}

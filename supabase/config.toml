@@ -1,0 +1,10 @@
+project_id = "aida-windtrack"
+
+[functions.ai-risk-assistant]
+verify_jwt = true
+
+[functions.report-draft]
+verify_jwt = true
+
+[functions.ingest-external-message]
+verify_jwt = true
