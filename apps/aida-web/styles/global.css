@@ -167,10 +167,15 @@ button {
 .aida-sidebar {
   background: linear-gradient(180deg, #0a246f 0%, #061a52 100%);
   color: #f2f7ff;
-  padding: 1.4rem;
+  padding: 1.2rem 1.1rem;
   display: grid;
   align-content: start;
-  gap: 1.5rem;
+  gap: 1.1rem;
+}
+
+.aida-brand {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .aida-brand h1 {
@@ -180,7 +185,7 @@ button {
 }
 
 .aida-brand__logo {
-  width: min(210px, 100%);
+  width: min(225px, 100%);
   height: auto;
   background: #ffffff;
   border-radius: 10px;
@@ -190,13 +195,13 @@ button {
 }
 
 .aida-brand p {
-  margin: 0.35rem 0 0;
+  margin: 0;
   color: #d8e4ff;
 }
 
 .aida-brand__eyebrow {
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   font-size: 0.75rem;
   color: #8cdff1;
 }
@@ -251,12 +256,24 @@ button {
 .aida-topbar {
   display: flex;
   justify-content: space-between;
-  align-items: end;
+  align-items: center;
   gap: 1rem;
   padding: 1rem 1.5rem;
   border-bottom: 1px solid #c5d8ef;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(8px);
+}
+
+.aida-topbar__identity {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.aida-topbar__subtitle {
+  margin: 0;
+  color: #0a246f;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .aida-topbar__kicker {
@@ -370,6 +387,11 @@ button {
   gap: 0.8rem;
 }
 
+.data-panel--subtle {
+  background: linear-gradient(180deg, #f9fcff 0%, #f3f9ff 100%);
+  border-style: dashed;
+}
+
 .data-panel__header {
   display: flex;
   align-items: end;
@@ -429,6 +451,76 @@ button {
   border: 1px solid var(--border);
   background: #f2f8f5;
   color: #0f5c47;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.54rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.status-chip--on_track {
+  background: #e8f8f2;
+  border-color: #94dec1;
+  color: #0f6a4d;
+}
+
+.status-chip--at_risk {
+  background: #fff6e9;
+  border-color: #f1cc8f;
+  color: #8c5605;
+}
+
+.status-chip--blocked {
+  background: #ffecec;
+  border-color: #ef9e9e;
+  color: #9e2525;
+}
+
+.snapshot-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.snapshot-kpi {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6fbff 100%);
+  padding: 0.8rem 0.9rem;
+}
+
+.snapshot-kpi p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.snapshot-kpi strong {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 1.52rem;
+  color: #0a246f;
+}
+
+.dashboard-callout h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.dashboard-callout__lead {
+  margin: 0.4rem 0 0.55rem;
+  color: #0a246f;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .muted {
@@ -533,6 +625,14 @@ button {
   .aida-topbar {
     flex-direction: column;
     align-items: start;
+  }
+
+  .aida-topbar__identity {
+    width: 100%;
+  }
+
+  .aida-topbar__subtitle {
+    font-size: 0.88rem;
   }
 
   .aida-topbar__controls {

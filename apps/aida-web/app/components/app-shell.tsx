@@ -57,10 +57,8 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
     <div className="aida-shell">
       <aside className="aida-sidebar">
         <div className="aida-brand">
-          <p className="aida-brand__eyebrow">AIDA Platform for</p>
+          <p className="aida-brand__eyebrow">Appia Wind Services</p>
           <img className="aida-brand__logo" src={appiaLogo} alt="Appia Wind Services" />
-          <h1>AIDA</h1>
-          <p>AI Wind Blade Management Platform</p>
         </div>
 
         <nav className="aida-nav">
@@ -83,7 +81,8 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
 
       <main className="aida-main">
         <header className="aida-topbar">
-          <div>
+          <div className="aida-topbar__identity">
+            <p className="aida-topbar__subtitle">AI Wind Blade Management Platform</p>
             <p className="aida-topbar__kicker">Signed in as</p>
             <strong>{user?.email ?? "Guest"}</strong>
           </div>
