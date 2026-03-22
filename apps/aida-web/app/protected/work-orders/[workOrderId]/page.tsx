@@ -544,7 +544,7 @@ export default function WorkOrderDetailPage() {
 
       <p className="message">
         Related links: {workOrder ? <Link to={`/sites/${workOrder.site_id}`}>Site</Link> : null}
-        {workOrder ? " · " : ""}
+        {workOrder ? " | " : ""}
         {workOrder ? <Link to={`/projects/${workOrder.project_id}`}>Project</Link> : null}
       </p>
 
