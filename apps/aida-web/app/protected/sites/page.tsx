@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ScreenFrame } from "@/app/components/screen-frame";
 import { useAuth } from "@/app/lib/auth-context";
 import { formatDate, formatNumber } from "@/app/lib/format";
+import type { RoleCode } from "@/app/lib/roles";
 import { supabase } from "@/app/lib/supabase";
 
 type SiteRow = {
@@ -20,99 +21,145 @@ type SiteSummaryRow = SiteRow & {
   activeVehicles: number;
 };
 
+type ProjectOption = {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+};
+
 export default function SitesPage() {
-  const { activeCompanyId } = useAuth();
+  const { activeCompanyId, roles } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sites, setSites] = useState<SiteSummaryRow[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [siteName, setSiteName] = useState("");
+  const [siteCode, setSiteCode] = useState("");
+  const [siteProjectId, setSiteProjectId] = useState("");
+  const [siteStatus, setSiteStatus] = useState("planned");
+  const [sitePlannedStart, setSitePlannedStart] = useState("");
+  const [sitePlannedEnd, setSitePlannedEnd] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createMessage, setCreateMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const run = async () => {
-      if (!supabase || !activeCompanyId) {
-        setLoading(false);
-        return;
-      }
+  const canCreateSites = useMemo(
+    () => roles.some((role: RoleCode) => role === "business_owner_admin" || role === "project_manager"),
+    [roles]
+  );
 
-      setLoading(true);
-      setError(null);
+  const loadData = useCallback(async () => {
+    if (!supabase || !activeCompanyId) {
+      setLoading(false);
+      return;
+    }
 
-      const sitesRes = await supabase
+    setLoading(true);
+    setError(null);
+
+    const [sitesRes, projectsRes] = await Promise.all([
+      supabase
         .from("sites")
         .select("id,name,site_code,status,planned_start,planned_end,project_id")
         .eq("company_id", activeCompanyId)
-        .order("planned_start", { ascending: true });
+        .order("planned_start", { ascending: true }),
+      supabase
+        .from("projects")
+        .select("id,code,name,status")
+        .eq("company_id", activeCompanyId)
+        .order("updated_at", { ascending: false }),
+    ]);
 
-      if (sitesRes.error) {
-        setError(sitesRes.error.message);
-        setLoading(false);
-        return;
-      }
-
-      const rows = (sitesRes.data ?? []) as SiteRow[];
-      const siteIds = rows.map((site) => site.id);
-
-      if (siteIds.length === 0) {
-        setSites([]);
-        setLoading(false);
-        return;
-      }
-
-      const [assignmentsRes, vehiclesRes] = await Promise.all([
-        supabase
-          .from("site_assignments")
-          .select("site_id")
-          .eq("company_id", activeCompanyId)
-          .eq("is_active", true)
-          .in("site_id", siteIds),
-        supabase
-          .from("vehicle_assignments")
-          .select("site_id")
-          .eq("company_id", activeCompanyId)
-          .is("return_at", null)
-          .in("site_id", siteIds),
-      ]);
-
-      const firstError = [assignmentsRes.error, vehiclesRes.error].find(Boolean);
-      if (firstError) {
-        setError(firstError.message);
-        setLoading(false);
-        return;
-      }
-
-      const crewBySite = new Map<string, number>();
-      for (const row of assignmentsRes.data ?? []) {
-        const siteId = row.site_id as string;
-        crewBySite.set(siteId, (crewBySite.get(siteId) ?? 0) + 1);
-      }
-
-      const vehiclesBySite = new Map<string, number>();
-      for (const row of vehiclesRes.data ?? []) {
-        const siteId = row.site_id as string;
-        vehiclesBySite.set(siteId, (vehiclesBySite.get(siteId) ?? 0) + 1);
-      }
-
-      const enriched = rows.map((site) => {
-        const siteSummary: SiteSummaryRow = {
-          id: site.id,
-          name: site.name,
-          site_code: site.site_code,
-          status: site.status,
-          planned_start: site.planned_start,
-          planned_end: site.planned_end,
-          project_id: site.project_id,
-          crewCount: crewBySite.get(site.id) ?? 0,
-          activeVehicles: vehiclesBySite.get(site.id) ?? 0,
-        };
-
-        return siteSummary;
-      });
-
-      setSites(enriched);
+    const rootError = [sitesRes.error, projectsRes.error].find(Boolean);
+    if (rootError) {
+      setError(rootError.message);
       setLoading(false);
-    };
+      return;
+    }
 
-    void run();
-  }, [activeCompanyId]);
+    const projectRows = (projectsRes.data ?? []) as ProjectOption[];
+    const siteRows = (sitesRes.data ?? []) as SiteRow[];
+    setProjects(projectRows);
+
+    if (!siteProjectId && projectRows[0]) {
+      setSiteProjectId(projectRows[0].id);
+    }
+
+    const siteIds = siteRows.map((site) => site.id);
+    if (siteIds.length === 0) {
+      setSites([]);
+      setLoading(false);
+      return;
+    }
+
+    const [assignmentsRes, vehiclesRes] = await Promise.all([
+      supabase
+        .from("site_assignments")
+        .select("site_id")
+        .eq("company_id", activeCompanyId)
+        .eq("is_active", true)
+        .in("site_id", siteIds),
+      supabase
+        .from("vehicle_assignments")
+        .select("site_id")
+        .eq("company_id", activeCompanyId)
+        .is("return_at", null)
+        .in("site_id", siteIds),
+    ]);
+
+    const secondError = [assignmentsRes.error, vehiclesRes.error].find(Boolean);
+    if (secondError) {
+      setError(secondError.message);
+      setLoading(false);
+      return;
+    }
+
+    const crewBySite = new Map<string, number>();
+    for (const row of assignmentsRes.data ?? []) {
+      const id = row.site_id as string;
+      crewBySite.set(id, (crewBySite.get(id) ?? 0) + 1);
+    }
+
+    const vehiclesBySite = new Map<string, number>();
+    for (const row of vehiclesRes.data ?? []) {
+      const id = row.site_id as string;
+      vehiclesBySite.set(id, (vehiclesBySite.get(id) ?? 0) + 1);
+    }
+
+    const enriched = siteRows.map((site) => {
+      const summary: SiteSummaryRow = {
+        id: site.id,
+        name: site.name,
+        site_code: site.site_code,
+        status: site.status,
+        planned_start: site.planned_start,
+        planned_end: site.planned_end,
+        project_id: site.project_id,
+        crewCount: crewBySite.get(site.id) ?? 0,
+        activeVehicles: vehiclesBySite.get(site.id) ?? 0,
+      };
+
+      return summary;
+    });
+
+    setSites(enriched);
+    setLoading(false);
+  }, [activeCompanyId, siteProjectId]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  const computedSiteCode = useMemo(() => {
+    if (siteCode.trim()) return siteCode.trim().toUpperCase();
+
+    const base = siteName
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return `SITE-${(base || "NEW").slice(0, 8)}-${Date.now().toString().slice(-3)}`;
+  }, [siteCode, siteName]);
 
   const highlights = useMemo(
     () => [
@@ -129,6 +176,41 @@ export default function SitesPage() {
     ],
     [sites]
   );
+
+  const handleCreateSite = async () => {
+    if (!supabase || !activeCompanyId) return;
+
+    setCreateBusy(true);
+    setCreateMessage(null);
+    setError(null);
+
+    const payload = {
+      company_id: activeCompanyId,
+      project_id: siteProjectId,
+      name: siteName.trim(),
+      site_code: computedSiteCode,
+      status: siteStatus,
+      planned_start: sitePlannedStart || null,
+      planned_end: sitePlannedEnd || null,
+      location: {},
+    };
+
+    const { error: insertError } = await supabase.from("sites").insert(payload);
+    if (insertError) {
+      setError(insertError.message);
+      setCreateBusy(false);
+      return;
+    }
+
+    setSiteName("");
+    setSiteCode("");
+    setSitePlannedStart("");
+    setSitePlannedEnd("");
+    setSiteStatus("planned");
+    setCreateMessage(`Site ${payload.site_code} created successfully.`);
+    await loadData();
+    setCreateBusy(false);
+  };
 
   return (
     <div className="screen-stack">
@@ -156,6 +238,76 @@ export default function SitesPage() {
         ]}
         actions={["Open site detail", "Open project detail", "Review work order activity"]}
       />
+
+      {canCreateSites ? (
+        <section className="data-panel">
+          <header className="data-panel__header">
+            <h3>Create Site</h3>
+            <p>Admin / PM action</p>
+          </header>
+          <form
+            className="inline-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreateSite();
+            }}
+          >
+            <label>
+              Site Name
+              <input
+                value={siteName}
+                onChange={(event) => setSiteName(event.target.value)}
+                required
+                placeholder="South Plains Farm - Segment A"
+              />
+            </label>
+            <label>
+              Site Code (optional)
+              <input
+                value={siteCode}
+                onChange={(event) => setSiteCode(event.target.value)}
+                placeholder={computedSiteCode}
+              />
+            </label>
+            <label>
+              Project
+              <select value={siteProjectId} onChange={(event) => setSiteProjectId(event.target.value)} required>
+                <option value="" disabled>
+                  Select a project
+                </option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.code} - {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Status
+              <select value={siteStatus} onChange={(event) => setSiteStatus(event.target.value)}>
+                <option value="planned">Planned</option>
+                <option value="active">Active</option>
+                <option value="in_progress">In Progress</option>
+              </select>
+            </label>
+            <label>
+              Planned Start
+              <input
+                type="date"
+                value={sitePlannedStart}
+                onChange={(event) => setSitePlannedStart(event.target.value)}
+              />
+            </label>
+            <label>
+              Planned End
+              <input type="date" value={sitePlannedEnd} onChange={(event) => setSitePlannedEnd(event.target.value)} />
+            </label>
+            <button type="submit" disabled={createBusy || !siteName.trim() || !siteProjectId}>
+              {createBusy ? "Creating..." : "Create Site"}
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       <section className="data-panel">
         <header className="data-panel__header">
@@ -207,6 +359,7 @@ export default function SitesPage() {
           </table>
         </div>
 
+        {createMessage ? <p className="message message--success">{createMessage}</p> : null}
         {error ? <p className="message message--error">{error}</p> : null}
         {!supabase ? <p className="message">Supabase is not configured for this deployment.</p> : null}
       </section>

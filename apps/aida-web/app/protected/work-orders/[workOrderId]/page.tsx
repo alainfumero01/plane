@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ScreenFrame } from "@/app/components/screen-frame";
 import { useAuth } from "@/app/lib/auth-context";
 import { formatDate, formatNumber } from "@/app/lib/format";
+import type { RoleCode } from "@/app/lib/roles";
 import { supabase } from "@/app/lib/supabase";
 
 type WorkOrderRecord = {
@@ -24,6 +25,7 @@ type TaskRecord = {
   status: string;
   planned_hours: number;
   actual_hours: number;
+  sequence_no?: number;
 };
 
 type DelayRecord = {
@@ -65,9 +67,10 @@ type EngineerReviewRecord = {
 
 export default function WorkOrderDetailPage() {
   const { workOrderId } = useParams();
-  const { activeCompanyId } = useAuth();
+  const { activeCompanyId, roles } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [workOrder, setWorkOrder] = useState<WorkOrderRecord | null>(null);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [delays, setDelays] = useState<DelayRecord[]>([]);
@@ -76,128 +79,148 @@ export default function WorkOrderDetailPage() {
   const [responses, setResponses] = useState<ResponseRecord[]>([]);
   const [reviews, setReviews] = useState<EngineerReviewRecord[]>([]);
 
-  useEffect(() => {
-    const run = async () => {
-      if (!supabase || !activeCompanyId || !workOrderId) {
-        setLoading(false);
-        return;
-      }
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskStatus, setTaskStatus] = useState("todo");
+  const [taskPlannedHours, setTaskPlannedHours] = useState("2");
+  const [taskBusy, setTaskBusy] = useState(false);
 
-      setLoading(true);
-      setError(null);
+  const [delayCategory, setDelayCategory] = useState("weather");
+  const [delaySeverity, setDelaySeverity] = useState("medium");
+  const [delayReason, setDelayReason] = useState("");
+  const [delayHours, setDelayHours] = useState("0");
+  const [delayCost, setDelayCost] = useState("0");
+  const [delayBusy, setDelayBusy] = useState(false);
 
-      const workOrderRes = await supabase
-        .from("work_orders")
-        .select("id,wo_number,title,status,priority,damage_summary,site_id,project_id")
+  const canWriteExecution = useMemo(
+    () =>
+      roles.some(
+        (role: RoleCode) => role === "business_owner_admin" || role === "project_manager" || role === "site_operator"
+      ),
+    [roles]
+  );
+
+  const loadData = useCallback(async () => {
+    if (!supabase || !activeCompanyId || !workOrderId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const workOrderRes = await supabase
+      .from("work_orders")
+      .select("id,wo_number,title,status,priority,damage_summary,site_id,project_id")
+      .eq("company_id", activeCompanyId)
+      .eq("id", workOrderId)
+      .maybeSingle<WorkOrderRecord>();
+
+    if (workOrderRes.error) {
+      setError(workOrderRes.error.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!workOrderRes.data) {
+      setWorkOrder(null);
+      setLoading(false);
+      return;
+    }
+
+    setWorkOrder(workOrderRes.data);
+
+    const [tasksRes, delaysRes, evidenceRes, threadsRes, reviewsRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id,title,status,planned_hours,actual_hours,sequence_no")
         .eq("company_id", activeCompanyId)
-        .eq("id", workOrderId)
-        .maybeSingle<WorkOrderRecord>();
+        .eq("work_order_id", workOrderId)
+        .order("sequence_no", { ascending: true }),
+      supabase
+        .from("delays")
+        .select("id,severity,reason,impact_hours,impact_cost,resolved_at")
+        .eq("company_id", activeCompanyId)
+        .eq("work_order_id", workOrderId)
+        .order("start_at", { ascending: false }),
+      supabase
+        .from("evidence_items")
+        .select("id,storage_path,captured_at,ai_summary")
+        .eq("company_id", activeCompanyId)
+        .eq("work_order_id", workOrderId)
+        .order("captured_at", { ascending: false }),
+      supabase
+        .from("communication_threads")
+        .select("id")
+        .eq("company_id", activeCompanyId)
+        .eq("work_order_id", workOrderId),
+      supabase
+        .from("engineer_reviews")
+        .select("review_status,review_notes,reviewed_at")
+        .eq("company_id", activeCompanyId)
+        .eq("work_order_id", workOrderId)
+        .order("reviewed_at", { ascending: false }),
+    ]);
 
-      if (workOrderRes.error) {
-        setError(workOrderRes.error.message);
+    const firstError = [tasksRes.error, delaysRes.error, evidenceRes.error, threadsRes.error, reviewsRes.error].find(
+      Boolean
+    );
+    if (firstError) {
+      setError(firstError.message);
+      setLoading(false);
+      return;
+    }
+
+    const threadIds = ((threadsRes.data ?? []) as ThreadRecord[]).map((thread) => thread.id);
+    let questionRows: QuestionRecord[] = [];
+    let responseRows: ResponseRecord[] = [];
+
+    if (threadIds.length > 0) {
+      const questionsRes = await supabase
+        .from("operator_questions")
+        .select("id,question_text,asked_at,priority")
+        .eq("company_id", activeCompanyId)
+        .in("thread_id", threadIds)
+        .order("asked_at", { ascending: false });
+
+      if (questionsRes.error) {
+        setError(questionsRes.error.message);
         setLoading(false);
         return;
       }
 
-      if (!workOrderRes.data) {
-        setWorkOrder(null);
-        setLoading(false);
-        return;
-      }
+      questionRows = (questionsRes.data ?? []) as QuestionRecord[];
+      const questionIds = questionRows.map((question) => question.id);
 
-      setWorkOrder(workOrderRes.data);
+      if (questionIds.length > 0) {
+        const responsesRes = await supabase
+          .from("engineer_responses")
+          .select("question_id,response_text,responded_at")
+          .eq("company_id", activeCompanyId)
+          .in("question_id", questionIds)
+          .order("responded_at", { ascending: false });
 
-      const [tasksRes, delaysRes, evidenceRes, threadsRes, reviewsRes] = await Promise.all([
-        supabase
-          .from("tasks")
-          .select("id,title,status,planned_hours,actual_hours")
-          .eq("company_id", activeCompanyId)
-          .eq("work_order_id", workOrderId)
-          .order("sequence_no", { ascending: true }),
-        supabase
-          .from("delays")
-          .select("id,severity,reason,impact_hours,impact_cost,resolved_at")
-          .eq("company_id", activeCompanyId)
-          .eq("work_order_id", workOrderId)
-          .order("start_at", { ascending: false }),
-        supabase
-          .from("evidence_items")
-          .select("id,storage_path,captured_at,ai_summary")
-          .eq("company_id", activeCompanyId)
-          .eq("work_order_id", workOrderId)
-          .order("captured_at", { ascending: false }),
-        supabase
-          .from("communication_threads")
-          .select("id")
-          .eq("company_id", activeCompanyId)
-          .eq("work_order_id", workOrderId),
-        supabase
-          .from("engineer_reviews")
-          .select("review_status,review_notes,reviewed_at")
-          .eq("company_id", activeCompanyId)
-          .eq("work_order_id", workOrderId)
-          .order("reviewed_at", { ascending: false }),
-      ]);
-
-      const firstError = [tasksRes.error, delaysRes.error, evidenceRes.error, threadsRes.error, reviewsRes.error].find(
-        Boolean
-      );
-      if (firstError) {
-        setError(firstError.message);
-        setLoading(false);
-        return;
-      }
-
-      const threadIds = ((threadsRes.data ?? []) as ThreadRecord[]).map((thread) => thread.id);
-      let questionRows: QuestionRecord[] = [];
-      let responseRows: ResponseRecord[] = [];
-
-      if (threadIds.length > 0) {
-        const questionsRes = await supabase
-          .from("operator_questions")
-          .select("id,question_text,asked_at,priority")
-          .eq("company_id", activeCompanyId)
-          .in("thread_id", threadIds)
-          .order("asked_at", { ascending: false });
-
-        if (questionsRes.error) {
-          setError(questionsRes.error.message);
+        if (responsesRes.error) {
+          setError(responsesRes.error.message);
           setLoading(false);
           return;
         }
 
-        questionRows = (questionsRes.data ?? []) as QuestionRecord[];
-        const questionIds = questionRows.map((question) => question.id);
-
-        if (questionIds.length > 0) {
-          const responsesRes = await supabase
-            .from("engineer_responses")
-            .select("question_id,response_text,responded_at")
-            .eq("company_id", activeCompanyId)
-            .in("question_id", questionIds)
-            .order("responded_at", { ascending: false });
-
-          if (responsesRes.error) {
-            setError(responsesRes.error.message);
-            setLoading(false);
-            return;
-          }
-
-          responseRows = (responsesRes.data ?? []) as ResponseRecord[];
-        }
+        responseRows = (responsesRes.data ?? []) as ResponseRecord[];
       }
+    }
 
-      setTasks((tasksRes.data ?? []) as TaskRecord[]);
-      setDelays((delaysRes.data ?? []) as DelayRecord[]);
-      setEvidence((evidenceRes.data ?? []) as EvidenceRecord[]);
-      setReviews((reviewsRes.data ?? []) as EngineerReviewRecord[]);
-      setQuestions(questionRows);
-      setResponses(responseRows);
-      setLoading(false);
-    };
-
-    void run();
+    setTasks((tasksRes.data ?? []) as TaskRecord[]);
+    setDelays((delaysRes.data ?? []) as DelayRecord[]);
+    setEvidence((evidenceRes.data ?? []) as EvidenceRecord[]);
+    setReviews((reviewsRes.data ?? []) as EngineerReviewRecord[]);
+    setQuestions(questionRows);
+    setResponses(responseRows);
+    setLoading(false);
   }, [activeCompanyId, workOrderId]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const totalPlannedHours = tasks.reduce((sum, task) => sum + Number(task.planned_hours ?? 0), 0);
   const totalActualHours = tasks.reduce((sum, task) => sum + Number(task.actual_hours ?? 0), 0);
@@ -208,6 +231,76 @@ export default function WorkOrderDetailPage() {
     }
     return map;
   }, [responses]);
+
+  const handleCreateTask = async () => {
+    if (!supabase || !activeCompanyId || !workOrderId || !workOrder) return;
+
+    setTaskBusy(true);
+    setError(null);
+    setSuccess(null);
+
+    const nextSequence = (tasks[tasks.length - 1]?.sequence_no ?? tasks.length) + 1;
+    const payload = {
+      company_id: activeCompanyId,
+      work_order_id: workOrderId,
+      site_id: workOrder.site_id,
+      title: taskTitle.trim(),
+      status: taskStatus,
+      sequence_no: nextSequence,
+      planned_hours: Number(taskPlannedHours || 0),
+      actual_hours: 0,
+    };
+
+    const { error: insertError } = await supabase.from("tasks").insert(payload);
+    if (insertError) {
+      setError(insertError.message);
+      setTaskBusy(false);
+      return;
+    }
+
+    setTaskTitle("");
+    setTaskStatus("todo");
+    setTaskPlannedHours("2");
+    setSuccess("Task created successfully.");
+    await loadData();
+    setTaskBusy(false);
+  };
+
+  const handleCreateDelay = async () => {
+    if (!supabase || !activeCompanyId || !workOrderId || !workOrder) return;
+
+    setDelayBusy(true);
+    setError(null);
+    setSuccess(null);
+
+    const payload = {
+      company_id: activeCompanyId,
+      project_id: workOrder.project_id,
+      site_id: workOrder.site_id,
+      work_order_id: workOrderId,
+      category: delayCategory,
+      severity: delaySeverity,
+      reason: delayReason.trim(),
+      impact_hours: Number(delayHours || 0),
+      impact_cost: Number(delayCost || 0),
+    };
+
+    const { error: insertError } = await supabase.from("delays").insert(payload);
+    if (insertError) {
+      setError(insertError.message);
+      setDelayBusy(false);
+      return;
+    }
+
+    setDelayCategory("weather");
+    setDelaySeverity("medium");
+    setDelayReason("");
+    setDelayHours("0");
+    setDelayCost("0");
+    setSuccess("Delay logged successfully.");
+    await loadData();
+    setDelayBusy(false);
+  };
 
   return (
     <div className="screen-stack">
@@ -238,6 +331,122 @@ export default function WorkOrderDetailPage() {
         ]}
         actions={["Update task progress", "Upload evidence", "Log delay impact"]}
       />
+
+      {canWriteExecution ? (
+        <section className="data-panel two-col">
+          <article>
+            <header className="data-panel__header">
+              <h3>Create Task</h3>
+              <p>Execution write action</p>
+            </header>
+            <form
+              className="inline-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateTask();
+              }}
+            >
+              <label>
+                Task Title
+                <input
+                  value={taskTitle}
+                  onChange={(event) => setTaskTitle(event.target.value)}
+                  required
+                  placeholder="Surface prep and masking"
+                />
+              </label>
+              <label>
+                Status
+                <select value={taskStatus} onChange={(event) => setTaskStatus(event.target.value)}>
+                  <option value="todo">To Do</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="done">Done</option>
+                </select>
+              </label>
+              <label>
+                Planned Hours
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={taskPlannedHours}
+                  onChange={(event) => setTaskPlannedHours(event.target.value)}
+                />
+              </label>
+              <button type="submit" disabled={taskBusy || !taskTitle.trim()}>
+                {taskBusy ? "Creating..." : "Create Task"}
+              </button>
+            </form>
+          </article>
+
+          <article>
+            <header className="data-panel__header">
+              <h3>Log Delay</h3>
+              <p>Execution write action</p>
+            </header>
+            <form
+              className="inline-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateDelay();
+              }}
+            >
+              <label>
+                Category
+                <select value={delayCategory} onChange={(event) => setDelayCategory(event.target.value)}>
+                  <option value="weather">Weather</option>
+                  <option value="material">Material</option>
+                  <option value="equipment">Equipment</option>
+                  <option value="staffing">Staffing</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label>
+                Severity
+                <select value={delaySeverity} onChange={(event) => setDelaySeverity(event.target.value)}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </label>
+              <label>
+                Reason
+                <textarea
+                  value={delayReason}
+                  onChange={(event) => setDelayReason(event.target.value)}
+                  required
+                  placeholder="Weather stand-down due to wind speed"
+                />
+              </label>
+              <label>
+                Impact Hours
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={delayHours}
+                  onChange={(event) => setDelayHours(event.target.value)}
+                />
+              </label>
+              <label>
+                Impact Cost
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={delayCost}
+                  onChange={(event) => setDelayCost(event.target.value)}
+                />
+              </label>
+              <button type="submit" disabled={delayBusy || !delayReason.trim()}>
+                {delayBusy ? "Logging..." : "Log Delay"}
+              </button>
+            </form>
+          </article>
+        </section>
+      ) : null}
 
       <section className="data-panel">
         <header className="data-panel__header">
@@ -339,6 +548,7 @@ export default function WorkOrderDetailPage() {
         {workOrder ? <Link to={`/projects/${workOrder.project_id}`}>Project</Link> : null}
       </p>
 
+      {success ? <p className="message message--success">{success}</p> : null}
       {error ? <p className="message message--error">{error}</p> : null}
       {!workOrder && !loading ? <p className="message">Work order not found or not accessible.</p> : null}
     </div>

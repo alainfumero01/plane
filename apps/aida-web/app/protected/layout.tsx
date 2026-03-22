@@ -5,7 +5,7 @@ import { canAccessPath } from "@/app/lib/roles";
 
 export default function ProtectedLayout() {
   const location = useLocation();
-  const { loading, session, roles } = useAuth();
+  const { loading, session, roles, activeCompanyId } = useAuth();
 
   if (loading) {
     return (
@@ -19,6 +19,14 @@ export default function ProtectedLayout() {
 
   if (!session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (!activeCompanyId && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  if (activeCompanyId && location.pathname === "/onboarding") {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (!canAccessPath(location.pathname, roles)) {

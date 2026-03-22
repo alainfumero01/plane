@@ -20,6 +20,10 @@ type AuthContextValue = {
   setRolePreview: (role: RoleCode | null) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
+  createCompany: (companyName: string, companySlug?: string | null) => Promise<string>;
+  joinCompany: (companySlug: string, roleCode?: RoleCode) => Promise<string>;
+  setDefaultCompany: (companyId: string) => Promise<void>;
+  refreshMemberships: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -201,6 +205,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (error) throw error;
   }, []);
 
+  const refreshMemberships = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await loadMemberships(userId);
+  }, [loadMemberships, session?.user?.id]);
+
+  const createCompany = useCallback(
+    async (companyName: string, companySlug?: string | null) => {
+      if (!supabase) throw new Error("Supabase is not configured.");
+
+      const { data, error } = await supabase.rpc("create_company_with_owner", {
+        p_company_name: companyName,
+        p_company_slug: companySlug || null,
+      });
+
+      if (error) throw error;
+      await refreshMemberships();
+      return data as string;
+    },
+    [refreshMemberships]
+  );
+
+  const joinCompany = useCallback(
+    async (companySlug: string, roleCode: RoleCode = "site_operator") => {
+      if (!supabase) throw new Error("Supabase is not configured.");
+
+      const { data, error } = await supabase.rpc("join_company", {
+        p_company_slug: companySlug,
+        p_role_code: roleCode,
+      });
+
+      if (error) throw error;
+      await refreshMemberships();
+      return data as string;
+    },
+    [refreshMemberships]
+  );
+
+  const setDefaultCompany = useCallback(
+    async (companyId: string) => {
+      if (!supabase) throw new Error("Supabase is not configured.");
+
+      const { error } = await supabase.rpc("set_default_company", {
+        p_company_id: companyId,
+      });
+
+      if (error) throw error;
+      await refreshMemberships();
+    },
+    [refreshMemberships]
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       loading,
@@ -213,9 +269,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setRolePreview,
       signIn,
       signUp,
+      createCompany,
+      joinCompany,
+      setDefaultCompany,
+      refreshMemberships,
       signOut,
     }),
-    [activeCompanyId, loading, memberships, rolePreview, roles, session, setRolePreview, signIn, signOut, signUp]
+    [
+      activeCompanyId,
+      createCompany,
+      joinCompany,
+      loading,
+      memberships,
+      refreshMemberships,
+      rolePreview,
+      roles,
+      session,
+      setDefaultCompany,
+      setRolePreview,
+      signIn,
+      signOut,
+      signUp,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

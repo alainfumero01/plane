@@ -6,6 +6,7 @@ export default [
   route("login", "./login/page.tsx"),
   route("sign-up", "./sign-up/page.tsx"),
   layout("./protected/layout.tsx", [
+    route("onboarding", "./protected/onboarding/page.tsx"),
     route("dashboard", "./protected/dashboard/page.tsx"),
     route("sites", "./protected/sites/page.tsx"),
     route("sites/:siteId", "./protected/sites/[siteId]/page.tsx"),

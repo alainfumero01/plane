@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ScreenFrame } from "@/app/components/screen-frame";
 import { useAuth } from "@/app/lib/auth-context";
 import { formatDate, formatNumber } from "@/app/lib/format";
+import type { RoleCode } from "@/app/lib/roles";
 import { supabase } from "@/app/lib/supabase";
 
 type SiteRecord = {
@@ -53,9 +54,10 @@ const unwrapMaterial = (value: SiteStockRecord["materials"]) => (Array.isArray(v
 
 export default function SiteDetailPage() {
   const { siteId } = useParams();
-  const { activeCompanyId } = useAuth();
+  const { activeCompanyId, roles } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [site, setSite] = useState<SiteRecord | null>(null);
   const [turbines, setTurbines] = useState<TurbineRecord[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);
@@ -63,93 +65,128 @@ export default function SiteDetailPage() {
   const [vehicles, setVehicles] = useState<VehicleAssignmentRecord[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderRecord[]>([]);
 
-  useEffect(() => {
-    const run = async () => {
-      if (!supabase || !activeCompanyId || !siteId) {
-        setLoading(false);
-        return;
-      }
+  const [turbineCode, setTurbineCode] = useState("");
+  const [turbineModel, setTurbineModel] = useState("");
+  const [turbineManufacturer, setTurbineManufacturer] = useState("");
+  const [creatingTurbine, setCreatingTurbine] = useState(false);
 
-      setLoading(true);
-      setError(null);
+  const [woTitle, setWoTitle] = useState("");
+  const [woPriority, setWoPriority] = useState("medium");
+  const [woDamageSummary, setWoDamageSummary] = useState("");
+  const [woTurbineId, setWoTurbineId] = useState("");
+  const [creatingWorkOrder, setCreatingWorkOrder] = useState(false);
 
-      const siteRes = await supabase
-        .from("sites")
-        .select("id,name,site_code,status,planned_start,planned_end,project_id")
-        .eq("company_id", activeCompanyId)
-        .eq("id", siteId)
-        .maybeSingle<SiteRecord>();
+  const canCreate = useMemo(
+    () => roles.some((role: RoleCode) => role === "business_owner_admin" || role === "project_manager"),
+    [roles]
+  );
 
-      if (siteRes.error) {
-        setError(siteRes.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!siteRes.data) {
-        setSite(null);
-        setLoading(false);
-        return;
-      }
-
-      setSite(siteRes.data);
-
-      const [turbinesRes, assignmentsRes, stockRes, vehicleRes, workOrdersRes] = await Promise.all([
-        supabase
-          .from("turbines")
-          .select("id,turbine_code,model,manufacturer,status")
-          .eq("company_id", activeCompanyId)
-          .eq("site_id", siteId)
-          .order("turbine_code", { ascending: true }),
-        supabase
-          .from("site_assignments")
-          .select("user_id,assignment_role")
-          .eq("company_id", activeCompanyId)
-          .eq("site_id", siteId)
-          .eq("is_active", true),
-        supabase
-          .from("site_stock")
-          .select("material_id,qty_on_hand,qty_allocated,materials(sku,name)")
-          .eq("company_id", activeCompanyId)
-          .eq("site_id", siteId),
-        supabase
-          .from("vehicle_assignments")
-          .select("vehicle_id,dispatch_at,vehicles(plate_no,type)")
-          .eq("company_id", activeCompanyId)
-          .eq("site_id", siteId)
-          .is("return_at", null),
-        supabase
-          .from("work_orders")
-          .select("id,wo_number,title,status,priority")
-          .eq("company_id", activeCompanyId)
-          .eq("site_id", siteId)
-          .order("updated_at", { ascending: false }),
-      ]);
-
-      const firstError = [
-        turbinesRes.error,
-        assignmentsRes.error,
-        stockRes.error,
-        vehicleRes.error,
-        workOrdersRes.error,
-      ].find(Boolean);
-
-      if (firstError) {
-        setError(firstError.message);
-        setLoading(false);
-        return;
-      }
-
-      setTurbines((turbinesRes.data ?? []) as TurbineRecord[]);
-      setAssignments((assignmentsRes.data ?? []) as AssignmentRecord[]);
-      setStocks((stockRes.data ?? []) as SiteStockRecord[]);
-      setVehicles((vehicleRes.data ?? []) as VehicleAssignmentRecord[]);
-      setWorkOrders((workOrdersRes.data ?? []) as WorkOrderRecord[]);
+  const loadData = useCallback(async () => {
+    if (!supabase || !activeCompanyId || !siteId) {
       setLoading(false);
-    };
+      return;
+    }
 
-    void run();
-  }, [activeCompanyId, siteId]);
+    setLoading(true);
+    setError(null);
+
+    const siteRes = await supabase
+      .from("sites")
+      .select("id,name,site_code,status,planned_start,planned_end,project_id")
+      .eq("company_id", activeCompanyId)
+      .eq("id", siteId)
+      .maybeSingle<SiteRecord>();
+
+    if (siteRes.error) {
+      setError(siteRes.error.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!siteRes.data) {
+      setSite(null);
+      setLoading(false);
+      return;
+    }
+
+    setSite(siteRes.data);
+
+    const [turbinesRes, assignmentsRes, stockRes, vehicleRes, workOrdersRes] = await Promise.all([
+      supabase
+        .from("turbines")
+        .select("id,turbine_code,model,manufacturer,status")
+        .eq("company_id", activeCompanyId)
+        .eq("site_id", siteId)
+        .order("turbine_code", { ascending: true }),
+      supabase
+        .from("site_assignments")
+        .select("user_id,assignment_role")
+        .eq("company_id", activeCompanyId)
+        .eq("site_id", siteId)
+        .eq("is_active", true),
+      supabase
+        .from("site_stock")
+        .select("material_id,qty_on_hand,qty_allocated,materials(sku,name)")
+        .eq("company_id", activeCompanyId)
+        .eq("site_id", siteId),
+      supabase
+        .from("vehicle_assignments")
+        .select("vehicle_id,dispatch_at,vehicles(plate_no,type)")
+        .eq("company_id", activeCompanyId)
+        .eq("site_id", siteId)
+        .is("return_at", null),
+      supabase
+        .from("work_orders")
+        .select("id,wo_number,title,status,priority")
+        .eq("company_id", activeCompanyId)
+        .eq("site_id", siteId)
+        .order("updated_at", { ascending: false }),
+    ]);
+
+    const firstError = [
+      turbinesRes.error,
+      assignmentsRes.error,
+      stockRes.error,
+      vehicleRes.error,
+      workOrdersRes.error,
+    ].find(Boolean);
+
+    if (firstError) {
+      setError(firstError.message);
+      setLoading(false);
+      return;
+    }
+
+    const turbineRows = (turbinesRes.data ?? []) as TurbineRecord[];
+    setTurbines(turbineRows);
+    setAssignments((assignmentsRes.data ?? []) as AssignmentRecord[]);
+    setStocks((stockRes.data ?? []) as SiteStockRecord[]);
+    setVehicles((vehicleRes.data ?? []) as VehicleAssignmentRecord[]);
+    setWorkOrders((workOrdersRes.data ?? []) as WorkOrderRecord[]);
+
+    if (!woTurbineId && turbineRows[0]) {
+      setWoTurbineId(turbineRows[0].id);
+    }
+
+    setLoading(false);
+  }, [activeCompanyId, siteId, woTurbineId]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  const computedTurbineCode = useMemo(() => {
+    if (turbineCode.trim()) return turbineCode.trim().toUpperCase();
+
+    const base = site?.site_code || "TB";
+    return `${base}-T${(turbines.length + 1).toString().padStart(2, "0")}`;
+  }, [site?.site_code, turbineCode, turbines.length]);
+
+  const computedWoNumber = useMemo(() => {
+    const seed = Date.now().toString().slice(-5);
+    const prefix = site?.site_code?.slice(0, 6).toUpperCase() || "SITE";
+    return `WO-${prefix}-${seed}`;
+  }, [site?.site_code]);
 
   const highlights = useMemo(
     () => [
@@ -191,6 +228,71 @@ export default function SiteDetailPage() {
     ]
   );
 
+  const handleCreateTurbine = async () => {
+    if (!supabase || !activeCompanyId || !siteId) return;
+
+    setCreatingTurbine(true);
+    setError(null);
+    setSuccess(null);
+
+    const payload = {
+      company_id: activeCompanyId,
+      site_id: siteId,
+      turbine_code: computedTurbineCode,
+      model: turbineModel.trim() || null,
+      manufacturer: turbineManufacturer.trim() || null,
+      status: "active",
+    };
+
+    const { error: insertError } = await supabase.from("turbines").insert(payload);
+    if (insertError) {
+      setError(insertError.message);
+      setCreatingTurbine(false);
+      return;
+    }
+
+    setTurbineCode("");
+    setTurbineModel("");
+    setTurbineManufacturer("");
+    setSuccess(`Turbine ${payload.turbine_code} created.`);
+    await loadData();
+    setCreatingTurbine(false);
+  };
+
+  const handleCreateWorkOrder = async () => {
+    if (!supabase || !activeCompanyId || !siteId || !site) return;
+
+    setCreatingWorkOrder(true);
+    setError(null);
+    setSuccess(null);
+
+    const payload = {
+      company_id: activeCompanyId,
+      project_id: site.project_id,
+      site_id: siteId,
+      turbine_id: woTurbineId || null,
+      wo_number: computedWoNumber,
+      title: woTitle.trim(),
+      status: "open",
+      priority: woPriority,
+      damage_summary: woDamageSummary.trim() || "",
+    };
+
+    const { error: insertError } = await supabase.from("work_orders").insert(payload);
+    if (insertError) {
+      setError(insertError.message);
+      setCreatingWorkOrder(false);
+      return;
+    }
+
+    setWoTitle("");
+    setWoPriority("medium");
+    setWoDamageSummary("");
+    setSuccess(`Work order ${payload.wo_number} created.`);
+    await loadData();
+    setCreatingWorkOrder(false);
+  };
+
   return (
     <div className="screen-stack">
       <ScreenFrame
@@ -200,6 +302,107 @@ export default function SiteDetailPage() {
         panels={panels}
         actions={["Open linked project", "Open work order detail", "Review turbine scope and evidence"]}
       />
+
+      {canCreate ? (
+        <section className="data-panel two-col">
+          <article>
+            <header className="data-panel__header">
+              <h3>Create Turbine</h3>
+              <p>Admin / PM action</p>
+            </header>
+            <form
+              className="inline-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateTurbine();
+              }}
+            >
+              <label>
+                Turbine Code (optional)
+                <input
+                  value={turbineCode}
+                  onChange={(event) => setTurbineCode(event.target.value)}
+                  placeholder={computedTurbineCode}
+                />
+              </label>
+              <label>
+                Model
+                <input
+                  value={turbineModel}
+                  onChange={(event) => setTurbineModel(event.target.value)}
+                  placeholder="GE 1.5sle"
+                />
+              </label>
+              <label>
+                Manufacturer
+                <input
+                  value={turbineManufacturer}
+                  onChange={(event) => setTurbineManufacturer(event.target.value)}
+                  placeholder="GE"
+                />
+              </label>
+              <button type="submit" disabled={creatingTurbine}>
+                {creatingTurbine ? "Creating..." : "Create Turbine"}
+              </button>
+            </form>
+          </article>
+
+          <article>
+            <header className="data-panel__header">
+              <h3>Create Work Order</h3>
+              <p>Admin / PM action</p>
+            </header>
+            <form
+              className="inline-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateWorkOrder();
+              }}
+            >
+              <label>
+                Title
+                <input
+                  value={woTitle}
+                  onChange={(event) => setWoTitle(event.target.value)}
+                  required
+                  placeholder="Leading edge crack repair"
+                />
+              </label>
+              <label>
+                Turbine (optional)
+                <select value={woTurbineId} onChange={(event) => setWoTurbineId(event.target.value)}>
+                  <option value="">No specific turbine</option>
+                  {turbines.map((turbine) => (
+                    <option key={turbine.id} value={turbine.id}>
+                      {turbine.turbine_code}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select value={woPriority} onChange={(event) => setWoPriority(event.target.value)}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </label>
+              <label>
+                Damage Summary
+                <textarea
+                  value={woDamageSummary}
+                  onChange={(event) => setWoDamageSummary(event.target.value)}
+                  placeholder="Describe observed damage and scope."
+                />
+              </label>
+              <button type="submit" disabled={creatingWorkOrder || !woTitle.trim()}>
+                {creatingWorkOrder ? "Creating..." : "Create Work Order"}
+              </button>
+            </form>
+          </article>
+        </section>
+      ) : null}
 
       <section className="data-panel">
         <header className="data-panel__header">
@@ -280,6 +483,7 @@ export default function SiteDetailPage() {
         </div>
       </section>
 
+      {success ? <p className="message message--success">{success}</p> : null}
       {error ? <p className="message message--error">{error}</p> : null}
       {!site && !loading ? <p className="message">Site not found or you do not have access.</p> : null}
     </div>
