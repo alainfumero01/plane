@@ -148,11 +148,25 @@ button {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 280px 1fr;
+  --bg: #eef5ff;
+  --bg-accent: #d9eaff;
+  --ink: #0a246f;
+  --ink-soft: #415586;
+  --brand: #02bee1;
+  --brand-dark: #0a246f;
+  --surface: #ffffff;
+  --surface-2: #f2f8ff;
+  --border: #c5d8ef;
+  --shadow: 0 10px 24px rgba(10, 36, 111, 0.12);
+  background:
+    radial-gradient(circle at 8% 0, rgba(2, 190, 225, 0.18) 0, transparent 35%),
+    radial-gradient(circle at 100% 8%, rgba(10, 36, 111, 0.08) 0, transparent 42%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-accent) 100%);
 }
 
 .aida-sidebar {
-  background: linear-gradient(180deg, #123a42 0%, #0d2c33 100%);
-  color: #eef4f2;
+  background: linear-gradient(180deg, #0a246f 0%, #061a52 100%);
+  color: #f2f7ff;
   padding: 1.4rem;
   display: grid;
   align-content: start;
@@ -162,18 +176,29 @@ button {
 .aida-brand h1 {
   margin: 0;
   font-size: 2rem;
+  color: #ffffff;
+}
+
+.aida-brand__logo {
+  width: min(210px, 100%);
+  height: auto;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid rgba(2, 190, 225, 0.45);
+  box-shadow: 0 8px 18px rgba(3, 15, 48, 0.3);
 }
 
 .aida-brand p {
   margin: 0.35rem 0 0;
-  color: #d6e8e4;
+  color: #d8e4ff;
 }
 
 .aida-brand__eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.75rem;
-  color: #96bfbb;
+  color: #8cdff1;
 }
 
 .aida-nav {
@@ -182,26 +207,32 @@ button {
 }
 
 .aida-nav__item {
-  color: #d4e5e1;
+  color: #dbe8ff;
   text-decoration: none;
   border-radius: 10px;
   padding: 0.62rem 0.75rem;
   font-weight: 600;
-  transition: background 0.2s ease;
+  border: 1px solid transparent;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .aida-nav__item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(2, 190, 225, 0.14);
+  border-color: rgba(2, 190, 225, 0.3);
 }
 
 .aida-nav__item.is-active {
-  background: rgba(11, 143, 108, 0.32);
+  background: rgba(2, 190, 225, 0.26);
+  border-color: rgba(2, 190, 225, 0.52);
   color: #ffffff;
 }
 
 .aida-company p {
   margin: 0;
-  color: #9fbdb9;
+  color: #a3c2ef;
   font-size: 0.82rem;
 }
 
@@ -223,8 +254,8 @@ button {
   align-items: end;
   gap: 1rem;
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border);
-  background: rgba(255, 253, 248, 0.78);
+  border-bottom: 1px solid #c5d8ef;
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(8px);
 }
 

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router";
 import { canAccessPath, roleLabels, type RoleCode } from "@/app/lib/roles";
 import { useAuth } from "@/app/lib/auth-context";
 import { supabase } from "@/app/lib/supabase";
+import appiaLogo from "@/app/assets/appia-logo.png";
 
 type NavItem = {
   label: string;
@@ -56,7 +57,8 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
     <div className="aida-shell">
       <aside className="aida-sidebar">
         <div className="aida-brand">
-          <p className="aida-brand__eyebrow">AIDA Platform</p>
+          <p className="aida-brand__eyebrow">AIDA Platform for</p>
+          <img className="aida-brand__logo" src={appiaLogo} alt="Appia Wind Services" />
           <h1>AIDA</h1>
           <p>AI Wind Blade Management Platform</p>
         </div>
