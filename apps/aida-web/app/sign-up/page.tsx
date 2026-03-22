@@ -22,16 +22,18 @@ export default function SignUpPage() {
           setError(null);
           setStatus(null);
 
-          void signUp(email, password, fullName)
-            .then(() => {
+          void (async () => {
+            try {
+              await signUp(email, password, fullName);
               setStatus(
-                `Account created for ${fullName || email}. After sign in, create your tenant with RPC create_company_with_owner('${companyName || "Appia Wind Services"}').`,
+                `Account created for ${fullName || email}. Sign in and AIDA will guide you through company onboarding in the browser.`
               );
-            })
-            .catch((err) => {
+            } catch (err) {
               setError(err instanceof Error ? err.message : "Sign up failed.");
-            })
-            .finally(() => setBusy(false));
+            } finally {
+              setBusy(false);
+            }
+          })();
         }}
       >
         <p className="public-card__kicker">AIDA Onboarding</p>
@@ -49,7 +51,13 @@ export default function SignUpPage() {
 
         <label>
           Password
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" minLength={8} required />
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            minLength={8}
+            required
+          />
         </label>
 
         <label>
